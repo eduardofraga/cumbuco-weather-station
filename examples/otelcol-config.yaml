@@ -1,0 +1,37 @@
+# Minimal OpenTelemetry Collector configuration for local verification and cluster forwarding.
+#
+#   docker run --rm -p 4318:4318 --dns 10.43.0.10 \
+#     -v "$PWD/examples/otelcol-config.yaml:/etc/otelcol/config.yaml" \
+#     otel/opentelemetry-collector:latest --config /etc/otelcol/config.yaml
+#
+# Then run the exporter:
+#
+#   OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318 go run ./cmd/weather-otel
+#   OTEL_EXPORTER_OTLP_ENDPOINT=http://observability-daemon-collector-headless.observability.svc.cluster.local:4318 go run ./cmd/weather-otel
+
+receivers:
+  otlp:
+    protocols:
+      http:
+        endpoint: 0.0.0.0:4318
+
+processors:
+  batch: {}
+
+exporters:
+  debug:
+    verbosity: detailed
+  otlphttp:
+    endpoint: http://observability-daemon-collector-headless.observability.svc.cluster.local:4318
+    tls:
+      insecure: true
+
+service:
+  telemetry:
+    logs:
+      level: info
+  pipelines:
+    metrics:
+      receivers: [otlp]
+      processors: [batch]
+      exporters: [debug, otlphttp]

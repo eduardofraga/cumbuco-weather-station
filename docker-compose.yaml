@@ -1,0 +1,58 @@
+# Local stack: the exporter plus a collector with the debug exporter.
+#
+#   docker-compose up --build
+#   docker-compose logs -f otel-collector
+#
+# If you already run a collector elsewhere, delete the otel-collector service
+# and set OTEL_EXPORTER_OTLP_ENDPOINT to its address before starting:
+#
+#   OTEL_EXPORTER_OTLP_ENDPOINT=http://observability-daemon-collector-headless.observability.svc.cluster.local:4318 docker-compose up -d weather-otel
+
+name: weather-otel
+
+services:
+  weather-otel:
+    build:
+      context: .
+      args:
+        VERSION: ${VERSION:-dev}
+    image: weather-otel:${VERSION:-dev}
+    restart: unless-stopped
+    depends_on:
+      - otel-collector
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    dns:
+      - 10.43.0.10
+    environment:
+      # Point this at your collector when not using the bundled one.
+      # To forward directly to the cluster collector:
+      # OTEL_EXPORTER_OTLP_ENDPOINT: http://observability-daemon-collector-headless.observability.svc.cluster.local:4318
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-http://otel-collector:4318}
+      OTEL_EXPORTER_OTLP_INSECURE: ${OTEL_EXPORTER_OTLP_INSECURE:-true}
+      OTEL_EXPORTER_OTLP_HEADERS: ${OTEL_EXPORTER_OTLP_HEADERS:-}
+      OTEL_EXPORTER_OTLP_COMPRESSION: ${OTEL_EXPORTER_OTLP_COMPRESSION:-gzip}
+      OTEL_SERVICE_NAME: ${OTEL_SERVICE_NAME:-cumbuco-weather-otel}
+
+      WEATHER_STATION_NAME: ${WEATHER_STATION_NAME:-Cumbuco}
+      WEATHER_STATION_TIMEZONE: ${WEATHER_STATION_TIMEZONE:-America/Fortaleza}
+      WEATHER_CLIENTRAW_URL: ${WEATHER_CLIENTRAW_URL:-https://www.cumbuco-oceanview.com/weather/clientraw.txt}
+      WEATHER_GIF_URLS: ${WEATHER_GIF_URLS:-https://www.cumbuco-oceanview.com/weather/index.gif}
+      WEATHER_GIF_FALLBACK: ${WEATHER_GIF_FALLBACK:-true}
+      WEATHER_VERIFY_FALLBACK: ${WEATHER_VERIFY_FALLBACK:-false}
+      WEATHER_INTERVAL: ${WEATHER_INTERVAL:-60s}
+      WEATHER_EXPORT_INTERVAL: ${WEATHER_EXPORT_INTERVAL:-30s}
+      WEATHER_LOG_LEVEL: ${WEATHER_LOG_LEVEL:-info}
+
+  otel-collector:
+    image: otel/opentelemetry-collector:latest
+    restart: unless-stopped
+    command: ["--config=/etc/otelcol/config.yaml"]
+    dns:
+      - 10.43.0.10
+    volumes:
+      - ./examples/otelcol-config.yaml:/etc/otelcol/config.yaml:ro
+    ports:
+      - "${OTEL_HTTP_PORT:-4318}:4318"   # OTLP/HTTP receiver
+      - "${COLLECTOR_METRICS_PORT:-8888}:8888" # collector self-telemetry
